@@ -2,14 +2,24 @@ name: Sentinel
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, edited]
 
 jobs:
   review:
     runs-on: ubuntu-latest
     steps:
       - name: Check PR title
-        run: echo "1. Check PR title matches requirements"
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          echo "PR title: $PR_TITLE"
+          pattern='^(feat|fix|docs|chore|test|refactor|style|perf|build|ci)(\(.+\))?: .+'
+          if echo "$PR_TITLE" | grep -qE "$pattern"; then
+            echo "✅ Title follows Conventional Commits"
+          else
+            echo "❌ Title must be like 'feat: add login' (type: description)"
+            exit 1
+          fi
 
       - name: Lint
         run: echo "2. Lint + syntax check"
