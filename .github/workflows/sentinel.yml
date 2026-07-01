@@ -1,0 +1,30 @@
+name: Sentinel
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check PR title
+        run: echo "1. Check PR title matches requirements"
+
+      - name: Lint
+        run: echo "2. Lint + syntax check"
+
+      - name: Coverage
+        run: echo "3. Test coverage >= 80%"
+
+      - name: Agent - PRD/TDD review
+        run: echo "4. Agent reviews code against PRD + TDD"
+
+      - name: Agent - resolve conflicts
+        run: echo "5. Agent resolves merge conflicts"
+
+      - name: CI + revert on failure
+        run: echo "6. CI runs; revert + reject if anything breaks"
+
+      - name: Send summary email
+        run: echo "7. Email contributor + repo owner"
