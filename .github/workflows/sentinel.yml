@@ -21,11 +21,22 @@ jobs:
             exit 1
           fi
 
-      - name: Lint
-        run: echo "2. Lint + syntax check"
+      - name: Check out code
+        uses: actions/checkout@v4
 
-      - name: Coverage
-        run: echo "3. Test coverage >= 80%"
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: uv sync --extra lint
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Coverage (measure only, gate later)
+        run: |
+          uv run pytest tests/unit --cov=app --cov-report=term-missing || true
+          echo "ℹ️ Coverage measured. 80% gate not enforced yet (no real tests exist)."
 
       - name: Agent - PRD/TDD review
         run: echo "4. Agent reviews code against PRD + TDD"
