@@ -38,16 +38,8 @@ jobs:
           uv run pytest tests/unit --cov=app --cov-report=term-missing || true
           echo "ℹ️ Coverage measured. 80% gate not enforced yet (no real tests exist)."
 
-      - name: Agent - PRD/TDD review
-        env:
-          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
-          GOOGLE_GENAI_USE_VERTEXAI: "FALSE"
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          uv run python -m app.review_pr \
-            --repo Meghana-davuluri/sentinel-demo \
-            --pr 1 \
-            --post
+      # Step 4 (PR review agent) lives in review.yml — it reviews a TARGET repo,
+      # not Sentinel itself, so it runs on its own manual trigger.
 
       - name: Agent - resolve conflicts
         run: echo "5. Agent resolves merge conflicts"
