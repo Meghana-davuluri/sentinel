@@ -31,11 +31,6 @@ import subprocess
 import sys
 
 from dotenv import load_dotenv
-
-# Load GOOGLE_API_KEY (and friends) from .env when running as a plain script.
-# `agents-cli run` does this automatically; a direct `python -m` invocation does not.
-load_dotenv()
-
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
@@ -130,6 +125,10 @@ def format_comment(review: Review) -> str:
 
 
 async def main() -> int:
+    # Load GOOGLE_API_KEY from .env for local runs. In CI the key comes from the
+    # environment (a GitHub secret), and load_dotenv() is a harmless no-op there.
+    load_dotenv()
+
     parser = argparse.ArgumentParser(description="Sentinel PR reviewer")
     parser.add_argument("--repo", required=True, help="owner/name")
     parser.add_argument("--pr", required=True, type=int, help="PR number")
