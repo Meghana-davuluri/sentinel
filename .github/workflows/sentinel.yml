@@ -39,7 +39,15 @@ jobs:
           echo "ℹ️ Coverage measured. 80% gate not enforced yet (no real tests exist)."
 
       - name: Agent - PRD/TDD review
-        run: echo "4. Agent reviews code against PRD + TDD"
+        env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          GOOGLE_GENAI_USE_VERTEXAI: "FALSE"
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          uv run python -m app.review_pr \
+            --repo Meghana-davuluri/sentinel-demo \
+            --pr 1 \
+            --post
 
       - name: Agent - resolve conflicts
         run: echo "5. Agent resolves merge conflicts"
