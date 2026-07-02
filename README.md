@@ -5,7 +5,7 @@
 **Agentic pull-request automation for Python repositories.**
 
 Sentinel reviews pull requests against a project's design documents and
-engineering rules, and resolves merge conflicts automatically — using
+engineering rules, and resolves merge conflicts automatically using
 multi-agent workflows built on the [Google Agent Development Kit (ADK)](https://adk.dev).
 
 </div>
@@ -14,15 +14,15 @@ multi-agent workflows built on the [Google Agent Development Kit (ADK)](https://
 
 ## Overview
 
-Code review is where a team's design intent is enforced — and where generic
+Code review is where a team's design intent is enforced and where generic
 tools fall short. A linter checks syntax; it cannot tell that an API handler
 sends email synchronously when the design mandates a background queue, or that a
 delete will orphan child rows in production.
 
 Sentinel closes that gap. Every pull request runs through a pipeline: the
 mechanical checks (title, lint, coverage) are ordinary CI, while the judgment
-calls — *does this change fit the architecture?* and *which side of a conflict is
-correct?* — are made by two ADK agents that read the repository's own design
+calls *does this change fit the architecture?* and *which side of a conflict is
+correct?*  are made by two ADK agents that read the repository's own design
 documents.
 
 ## Pipeline
