@@ -1,17 +1,58 @@
 {
   "eval_cases": [
     {
-      "eval_case_id": "greeting",
+      "eval_case_id": "expect_reject__sync_email",
       "prompt": {
         "role": "user",
-        "parts": [{"text": "Hello, what can you help me with?"}]
+        "parts": [
+          {
+            "text": "Review this pull request.\n\n=== TDD ===\nWhen a task is completed the user must be emailed. Email is slow and can fail, so it MUST NOT block the API response: the API enqueues a job and a background worker sends the email. The API must NEVER call worker.send_email directly.\n\n=== RULES ===\nrule 'thin-api': the API layer must stay thin — no business logic, no slow/blocking calls in request handlers.\n\n=== DIFF ===\nIn app/api.py, complete_task now calls worker.send_email(task.owner_email) directly inside the request handler instead of enqueuing a job."
+          }
+        ]
       }
     },
     {
-      "eval_case_id": "weather_query",
+      "eval_case_id": "expect_reject__hardcoded_secret",
       "prompt": {
         "role": "user",
-        "parts": [{"text": "What's the weather like in San Francisco?"}]
+        "parts": [
+          {
+            "text": "Review this pull request.\n\n=== TDD ===\nStandard Tasks API service.\n\n=== RULES ===\nrule 'no-secrets-in-code': never hardcode secrets, API keys, passwords or tokens in source; read them from environment variables.\n\n=== DIFF ===\nIn app/worker.py, send_email now sets api_key = \"sk_live_4f9a2c7e1b8d6\" directly in the source instead of reading os.environ['EMAIL_API_KEY']."
+          }
+        ]
+      }
+    },
+    {
+      "eval_case_id": "expect_reject__cascade_delete",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "Review this pull request.\n\n=== TDD ===\nA Task has many Reminder child rows linked by task_id. Deleting a Task must also remove its Reminder rows.\n\n=== RULES ===\nrule 'cascade-deletes': the production database does NOT have ON DELETE CASCADE. When deleting a parent row you MUST delete its child rows explicitly first, or they will orphan in production.\n\n=== DIFF ===\nIn app/api.py, delete_task now runs DELETE FROM tasks WHERE id = ? directly, without first deleting the task's Reminder rows."
+          }
+        ]
+      }
+    },
+    {
+      "eval_case_id": "expect_approve__clean_queue",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "Review this pull request.\n\n=== TDD ===\nWhen a task is completed the user must be emailed via a background queue; the API must never send email synchronously.\n\n=== RULES ===\nrule 'thin-api': the API layer must stay thin — no slow/blocking calls in request handlers.\n\n=== DIFF ===\nIn app/api.py, complete_task marks the task done and enqueues a notification job with queue.put({'type': 'notify', 'task_id': task_id}); a background worker consumes the queue and sends the email asynchronously."
+          }
+        ]
+      }
+    },
+    {
+      "eval_case_id": "expect_reject__hard_author_side_wrong",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "Review this pull request. The author believes their change is an improvement, but judge it strictly against the TDD.\n\n=== TDD ===\nThe API must NEVER send email synchronously. All notifications go through the background queue and worker. This was an explicit decision to keep request latency independent of the email provider.\n\n=== RULES ===\nrule 'thin-api': no slow/blocking calls in request handlers.\n\n=== DIFF ===\nIn app/api.py, the author replaced the queue-based notification with a direct, synchronous worker.send_email(...) call, arguing it makes emails arrive 'instantly' and is simpler. The diff removes queue.put(...) and adds a blocking send_email call in complete_task."
+          }
+        ]
       }
     }
   ]
