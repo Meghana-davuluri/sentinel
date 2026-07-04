@@ -135,6 +135,12 @@ async def main() -> int:
     parser.add_argument(
         "--post", action="store_true", help="post the verdict as a PR comment"
     )
+    parser.add_argument(
+        "--email",
+        action="append",
+        default=[],
+        help="email address to send the summary to (repeatable)",
+    )
     args = parser.parse_args()
 
     print(f"Fetching diff + docs for {args.repo} PR #{args.pr}...")
@@ -151,6 +157,12 @@ async def main() -> int:
     if args.post:
         post_comment(args.repo, args.pr, comment)
         print("Posted review comment to the PR.")
+
+    if args.email:
+        from app.notify import send_review_email
+
+        send_review_email(args.repo, args.pr, review, args.email)
+        print(f"Emailed summary to: {', '.join(args.email)}")
 
     # Fail the CI check if the agent rejected the PR.
     return 1 if review.verdict == "reject" else 0

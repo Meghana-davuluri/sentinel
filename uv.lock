@@ -3000,6 +3000,7 @@ dependencies = [
     { name = "gcsfs" },
     { name = "google-adk", extra = ["gcp"] },
     { name = "google-cloud-logging" },
+    { name = "httpx" },
     { name = "opentelemetry-instrumentation-google-genai" },
     { name = "python-dotenv" },
 ]
@@ -3033,6 +3034,7 @@ requires-dist = [
     { name = "google-adk", extras = ["gcp"], specifier = ">=2.0.0,<3.0.0" },
     { name = "google-cloud-aiplatform", extras = ["evaluation"], marker = "extra == 'eval'", specifier = ">=1.156.0" },
     { name = "google-cloud-logging", specifier = ">=3.12.0,<4.0.0" },
+    { name = "httpx", specifier = ">=0.28.1" },
     { name = "opentelemetry-instrumentation-google-genai", specifier = ">=0.1.0,<1.0.0" },
     { name = "python-dotenv", specifier = ">=1.2.2" },
     { name = "ruff", marker = "extra == 'lint'", specifier = ">=0.4.6,<1.0.0" },
