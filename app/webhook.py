@@ -24,7 +24,6 @@ Environment:
     GH_TOKEN / GITHUB_TOKEN — token the review script uses to read/post on the PR.
 """
 
-import asyncio
 import hashlib
 import hmac
 import os
@@ -67,14 +66,17 @@ def health() -> dict:
     return {"status": "ok", "service": "sentinel-webhook"}
 
 
-async def run_review(repo: str, pr: int) -> None:
-    """Fetch the PR, run the reviewer, post the verdict, and email a summary.
-    Runs in the background so the webhook can answer GitHub within its ~10s
-    timeout."""
+async def run_review(repo: str, pr: int, head_sha: str | None = None) -> None:
+    """Fetch the PR, run the review pipeline, post the verdict, and email a
+    summary. Runs in the background so the webhook can answer GitHub within
+    its ~10s timeout. ``head_sha`` lets the investigator's tools read files
+    from the exact commit under review."""
     diff = fetch_diff(repo, pr)
     tdd = fetch_file(repo, TDD_PATH)
     rules = fetch_file(repo, RULES_PATH)
-    review = await run_agent(build_prompt(tdd, rules, diff))
+    review = await run_agent(
+        build_prompt(tdd, rules, diff), repo=repo, head_sha=head_sha
+    )
     post_comment(repo, pr, format_comment(review))
 
     # Email the summary to the repo owner, if configured. Never let an email
@@ -111,8 +113,10 @@ async def webhook(
 
     repo = payload["repository"]["full_name"]
     pr = payload["number"]
+    head_sha = (payload.get("pull_request") or {}).get("head", {}).get("sha")
 
     # Respond to GitHub immediately; do the slow review in the background.
-    background_tasks.add_task(lambda: asyncio.run(run_review(repo, pr)))
+    # Starlette awaits async callables natively — no extra event loop needed.
+    background_tasks.add_task(run_review, repo, pr, head_sha)
 
     return {"status": "accepted", "repo": repo, "pr": pr}

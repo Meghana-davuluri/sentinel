@@ -31,6 +31,7 @@ import subprocess
 import sys
 
 from dotenv import load_dotenv
+from google.adk.agents.run_config import RunConfig
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
@@ -40,6 +41,10 @@ from app.agent import Review, root_agent
 # Where the source-of-truth docs live in the target repo.
 TDD_PATH = "design/TDD.md"
 RULES_PATH = "sentinel.rules.md"
+
+# Hard ceiling on model calls per review, so a confused investigator cannot
+# loop on tool calls burning quota. Investigation + verdict fit comfortably.
+MAX_LLM_CALLS = 12
 
 
 def _gh(args: list[str]) -> str:
@@ -53,6 +58,12 @@ def _gh(args: list[str]) -> str:
 def fetch_diff(repo: str, pr: int) -> str:
     """Fetch the unified diff of a PR."""
     return _gh(["pr", "diff", str(pr), "--repo", repo])
+
+
+def fetch_head_sha(repo: str, pr: int) -> str:
+    """Fetch the PR's head commit SHA (what the investigator's tools read at)."""
+    out = _gh(["pr", "view", str(pr), "--repo", repo, "--json", "headRefOid"])
+    return json.loads(out)["headRefOid"]
 
 
 def fetch_file(repo: str, path: str) -> str:
@@ -77,11 +88,20 @@ def build_prompt(tdd: str, rules: str, diff: str) -> str:
     )
 
 
-async def run_agent(prompt: str) -> Review:
-    """Run the code_review_agent once and return its structured verdict."""
+async def run_agent(
+    prompt: str, repo: str | None = None, head_sha: str | None = None
+) -> Review:
+    """Run the review pipeline once and return its structured verdict.
+
+    When ``repo`` + ``head_sha`` are given they are seeded into session state,
+    which is where the investigator's tools (read_file/list_files) look — the
+    model itself can never choose which repo to read. Without them the
+    pipeline still works, reviewing from the diff alone.
+    """
     session_service = InMemorySessionService()
+    state = {"repo": repo, "head_sha": head_sha} if repo and head_sha else {}
     await session_service.create_session(
-        app_name="app", user_id="ci", session_id="review"
+        app_name="app", user_id="ci", session_id="review", state=state
     )
     runner = Runner(
         agent=root_agent, app_name="app", session_service=session_service
@@ -94,10 +114,20 @@ async def run_agent(prompt: str) -> Review:
         new_message=types.Content(
             role="user", parts=[types.Part.from_text(text=prompt)]
         ),
+        run_config=RunConfig(max_llm_calls=MAX_LLM_CALLS),
     ):
-        if event.is_final_response() and event.content:
-            final_text = event.content.parts[0].text
+        if not (event.is_final_response() and event.content and event.content.parts):
+            continue
+        text = event.content.parts[0].text
+        if not text:
+            continue
+        if event.author == "context_investigator":
+            print(f"=== INVESTIGATION NOTES ===\n{text.strip()}\n")
+        elif event.author == "code_review_agent":
+            final_text = text
 
+    if not final_text:
+        raise RuntimeError("the review pipeline produced no verdict")
     return Review.model_validate_json(final_text)
 
 
@@ -145,11 +175,14 @@ async def main() -> int:
 
     print(f"Fetching diff + docs for {args.repo} PR #{args.pr}...")
     diff = fetch_diff(args.repo, args.pr)
+    head_sha = fetch_head_sha(args.repo, args.pr)
     tdd = fetch_file(args.repo, TDD_PATH)
     rules = fetch_file(args.repo, RULES_PATH)
 
-    print("Running the code review agent...")
-    review = await run_agent(build_prompt(tdd, rules, diff))
+    print("Running the code review pipeline...")
+    review = await run_agent(
+        build_prompt(tdd, rules, diff), repo=args.repo, head_sha=head_sha
+    )
 
     print(json.dumps(review.model_dump(), indent=2))
 

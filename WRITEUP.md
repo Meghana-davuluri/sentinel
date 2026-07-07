@@ -26,19 +26,21 @@ human reviewer required.
 
 When a pull request is opened, Sentinel runs a pipeline:
 
-| # | Check | Mechanism |
-|---|-------|-----------|
-| 1 | PR title follows convention | CI (Conventional Commits) |
-| 2 | Lint and syntax | CI (`ruff`) |
-| 3 | Test coverage | CI (`pytest --cov`) |
-| 4 | **Code aligns with design (TDD) and rules** | **Code Review Agent** |
-| 5 | **Merge conflicts resolved** | **Conflict Agent** |
-| 6 | Summary emailed to author and owner | Resend |
+| # | Check | Mechanism | Status |
+|---|-------|-----------|:------:|
+| 1 | PR title follows convention | CI — Conventional Commits | ✅ |
+| 2 | Lint and syntax | CI — `ruff` | ✅ |
+| 3 | Test coverage ≥ 80% | CI — `pytest --cov` | ✅ |
+| 4 | Code aligns with design (TDD) and rules | **Code Review Agent** | ✅ |
+| 5 | Merge conflicts resolved | **Conflict Agent** | ✅ |
+| 6 | CI passes; revert on regression | _planned_ | ◻️ |
+| 7 | Summary email on review completion | Resend | ✅ |
 
 The mechanical checks are ordinary CI. The judgment calls - *does this fit the
-architecture?* and *which side of a conflict is correct?* - are made by two ADK
-agents. To close the loop, Sentinel wires up an email API (Resend) so the repo
-owner and contributors receive a summary of the verdict once the review is completed.
+architecture?* and *which side of a conflict is correct?* - are made by ADK
+agents. To close the loop, Sentinel wires up an email API (Resend): the deployed
+webhook automatically emails the verdict summary to the repo owner, and the CLI
+can copy any additional addresses.
 
 ## Deployment — a live service, not a script
 
@@ -50,13 +52,26 @@ in the loop and no manual trigger. The reviewer also runs as a GitHub Actions
 workflow for teams that prefer CI-native execution; the same agent code backs
 both paths.
 
-## The two agents
+## The agents
 
-**Code Review Agent.** Reads a PR's diff together with the target repository's
-Technical Design Document and engineering rules, then returns a *structured*
-verdict — approve or reject — with findings that cite the exact rule violated. A
-Pydantic output schema turns a chatty model into a reliable component: CI can
-branch on `verdict == "reject"` and block the merge.
+**Code Review Pipeline** — a two-stage ADK `SequentialAgent`:
+
+1. An **investigator agent** reads the diff and, when the verdict depends on
+   code the diff does not show — a called helper, a base class, config defined
+   elsewhere — uses its tools (`read_file`, `list_files`) to fetch those files
+   from the exact commit under review and writes verified notes to session
+   state. The repo coordinates come from session state, never from the model,
+   so a malicious diff cannot point the tools at another repository; reads are
+   capped and every tool failure degrades gracefully to a diff-only review.
+2. A **verdict agent** judges the diff against the TDD and team rules, weighing
+   the investigator's notes, and returns a *structured* verdict — approve or
+   reject — with findings that cite the exact rule violated. A Pydantic output
+   schema turns a chatty model into a reliable component: CI can branch on
+   `verdict == "reject"` and block the merge.
+
+The split is not cosmetic: in ADK, an agent with a structured output schema
+cannot call tools, so investigation (tools, no schema) and judgment (schema, no
+tools) are necessarily separate agents cooperating through shared state.
 
 **Conflict Agent.** Given a file with Git conflict markers plus the same design
 documents, it decides which side of each conflict to keep, produces the fully
@@ -117,16 +132,19 @@ that contain deliberate violations and merge conflicts.
 
 | Concern | Choice |
 |---------|--------|
-| Agent framework | Google ADK (multi-agent) |
+| Agent framework | Google ADK — multi-agent `SequentialAgent` pipeline |
+| Agent tools | `read_file` / `list_files` against the PR's head commit, state-scoped |
 | Model | Gemini (`gemini-flash-latest`) with Pydantic structured output |
 | Deployment | Google Cloud Run — FastAPI webhook, HMAC-verified, background review |
 | Orchestration | GitHub Actions (CI path) + GitHub webhooks (live path) |
 | GitHub integration | `gh` CLI — diffs, file contents, comments, pushes |
 | Notifications | Resend email API |
-| Quality | ADK eval framework, custom verdict-match metric |
+| Quality | ADK eval framework, custom verdict-match metric; unit-tested tools |
 
-The pipeline is split across two workflows so the reviewer (which targets an
-external repo) never blocks Sentinel's own PR checks.
+The CI side is split across three workflows — `sentinel.yml` (mechanical checks
+on Sentinel's own PRs), `review.yml` (reviewer against a target repo), and
+`resolve.yml` (conflict resolver against a target repo) — so agent runs, which
+target an external repo, never block Sentinel's own PR checks.
 
 ## Business impact
 
@@ -147,6 +165,7 @@ external repo) never blocks Sentinel's own PR checks.
 Sentinel targets Python repositories, with agents implemented in ADK. It is a
 capstone demonstration, not a hardened production service: the coverage gate is
 in measurement mode pending a full agent test suite, and email delivery uses a
-sandbox sender until a domain is verified. The core — two working ADK agents
-that enforce a repository's own design intent, validated at 1.0 accuracy — is
+sandbox sender until a domain is verified. The core — a working multi-agent ADK
+review pipeline (investigate → verdict) and a conflict-resolving agent that
+enforce a repository's own design intent, validated at 1.0 accuracy — is
 complete and reproducible.

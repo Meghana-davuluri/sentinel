@@ -14,7 +14,7 @@ uv run ruff check .                  # lint (matches the CI check)
 uv run ruff check --fix .            # lint + autofix
 uv run pytest                        # run all tests
 uv run pytest tests/unit             # unit tests only (what CI coverage runs on)
-uv run pytest tests/unit/test_dummy.py::test_name   # single test
+uv run pytest tests/unit/test_repo_tools.py::test_read_file_rejects_path_traversal   # single test
 uv run pytest --cov=app --cov-report=term-missing   # coverage (80% gate is planned, not yet enforced)
 
 # Run the agents against a real GitHub PR (needs GOOGLE_API_KEY in .env and gh auth)
@@ -26,11 +26,12 @@ Local runs need a `.env` with `GOOGLE_API_KEY=<key>` (from https://aistudio.goog
 
 ## Architecture
 
-### The two agents (`app/agent.py`, `app/conflict_agent.py`)
+### The agents (`app/agent.py`, `app/repo_tools.py`, `app/conflict_agent.py`)
 
-Both follow the same pattern: an ADK `Agent` wrapping `Gemini(..., retry_options=...)` (retries guard against transient 503s), with a Pydantic `output_schema` for structured output and a detailed `INSTRUCTION` prompt.
+All LLM agents wrap `Gemini(..., retry_options=...)` (retries guard against transient 503s) with detailed `INSTRUCTION` prompts.
 
-- **Code Review Agent** (`app/agent.py`) → `Review` schema (`verdict` approve/reject, `summary`, list of `Finding`). A `blocker` finding forces `reject`; `warning` is advisory. It reasons against the target repo's *own* documented intent, so it catches design drift a generic linter cannot.
+- **Code Review Pipeline** (`app/agent.py`) — a two-stage `SequentialAgent` (`root_agent`, name `code_review_pipeline`). Stage 1, `context_investigator`, has the `read_file`/`list_files` tools from `app/repo_tools.py` and writes notes to session state (`output_key="context_notes"`). Stage 2, `code_review_agent`, has `output_schema=Review` and reads the notes via the `{context_notes?}` instruction template. **This split is forced by ADK: an agent with `output_schema` cannot have tools.** `Review` schema: `verdict` approve/reject, `summary`, list of `Finding` (a `blocker` finding forces `reject`; `warning` is advisory).
+- **Repo tools** (`app/repo_tools.py`) — read the repo coordinates (`repo`, `head_sha`) from **session state**, never from the model (prompt-injection guard). They never raise: all failures return `{"error": ...}` dicts, so with no repo context (evals, tests) the pipeline degrades to a diff-only review. Reads are capped (`MAX_READS=5` via a state counter, `MAX_FILE_CHARS` truncation); `RunConfig(max_llm_calls)` in `review_pr.py` is the hard ceiling.
 - **Conflict Agent** (`app/conflict_agent.py`) → `Resolution` schema (full `resolved_content` with all conflict markers removed, one `HunkDecision` per hunk, `summary`). Chooses `ours`/`theirs`/`combined` per hunk, preferring the side that matches the design docs.
 
 Both agents read the target repo's source-of-truth docs, whose paths are hardcoded in `app/review_pr.py`:
