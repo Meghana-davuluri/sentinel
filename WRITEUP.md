@@ -156,6 +156,34 @@ external repository, so they never block Sentinel's own PR checks.
 - **Faster merges.** Conflicts are resolved and verdicts delivered in seconds,
   not on the next reviewer's schedule.
 
+## The journey
+
+We built Sentinel to de-risk the hard part first. The mechanical checks (title,
+lint, coverage) are a solved problem, so we started with a skeleton pipeline to
+prove the plumbing, then went straight at the real uncertainty: can an agent read
+a diff plus a design doc and return a verdict a machine can act on? Forcing the
+model into a Pydantic schema turned a chatty LLM into a reliable component, so CI
+could branch on `verdict == "reject"`.
+
+The agent design evolved. A single agent could either use tools or return
+structured output, but ADK does not allow both on one agent. That constraint
+pushed us to a better architecture: a two-stage `SequentialAgent` where an
+investigator reads the diff and, when the verdict depends on code the diff does
+not show, uses `read_file` and `list_files` to pull in the surrounding context,
+then hands notes to a verdict agent that emits the structured `Review`.
+
+Deployment surfaced the classic webhook problems, and solving each taught us
+something. GitHub expects a webhook to respond within about ten seconds, but a
+full review takes longer, so we answer immediately and run the review in a
+background task. On Cloud Run that background task silently never ran, because
+the platform suspends CPU the moment the response is sent; deploying with CPU
+always-on fixed it. We also hardened the boundary: the endpoint verifies GitHub's
+HMAC signature, the agent's repo tools read their coordinates from session state
+rather than the model (a prompt-injection guard), and file reads are capped so a
+review cannot run away. Throughout, the free-tier model quota forced us to batch
+work and add retries, which is exactly the kind of real constraint the two-stage
+pipeline had to be robust against.
+
 ## Links
 
 - **Repository:** https://github.com/Meghana-davuluri/sentinel
