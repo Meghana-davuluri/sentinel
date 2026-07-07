@@ -37,27 +37,35 @@ Both agents read the target repo's source-of-truth docs, whose paths are hardcod
 - `design/TDD.md` — Technical Design Document
 - `sentinel.rules.md` — team engineering rules (each rule has an id like `thin-api`)
 
-### CLI drivers (`app/review_pr.py`, `app/resolve_conflict.py`)
+### CLI drivers (`app/review_pr.py`, `app/resolve_conflict.py`, `app/autoresolve_pr.py`)
 
-These wire an agent to real inputs. Each builds a prompt embedding the TDD + rules + the diff/conflicted file, runs the agent via an ADK `Runner` + `InMemorySessionService`, parses the final event's text with `Model.model_validate_json`, and acts on the result. `review_pr.py` additionally fetches PR data via `gh`, formats the verdict as a Markdown PR comment (posted with `--post`), and **exits non-zero on `reject`** so it fails as a CI check.
+These wire an agent to real inputs. Each builds a prompt embedding the TDD + rules + the diff/conflicted file, runs the agent via an ADK `Runner` + `InMemorySessionService`, parses the final event's text with `Model.model_validate_json`, and acts on the result. `review_pr.py` additionally fetches PR data via `gh`, formats the verdict as a Markdown PR comment (posted with `--post`), optionally emails a summary via Resend (`--email`), and **exits non-zero on `reject`** so it fails as a CI check.
 
-> Note: `README.md` references `app/autoresolve_pr.py` (clone/merge/resolve/commit/push). That file does not exist yet — `resolve_conflict.py` is the current "brain-only" slice that prints a resolution without touching git.
+- `resolve_conflict.py` — brain-only slice: runs the conflict agent on one conflicted file and prints the resolution (no git).
+- `autoresolve_pr.py` — full pipeline: clones the target repo, merges base to surface conflicts, resolves each file with the agent, then commits + pushes to the PR branch (dry run unless `--push`).
 
 ### Pipeline (7 steps, PR workflow)
 
-Steps run in order; steps 6–7 are not yet implemented:
+Steps run in order:
 1. PR title = Conventional Commits — CI (`sentinel.yml`) ✅
 2. Lint / syntax — CI `ruff` ✅
 3. Coverage ≥ 80% — CI `pytest --cov`, currently measure-only ✅ (gate planned)
 4. Code aligns with TDD + rules — **Code Review Agent** ✅
 5. Merge conflicts resolved — **Conflict Agent** ✅
 6. CI passes; revert on regression — planned ◻️
-7. Summary email to author + owner — planned ◻️
+7. Summary email to author + owner — Resend via `--email` ✅
 
 ### GitHub Actions (`.github/workflows/`)
 
-- `sentinel.yml` — runs on Sentinel's *own* PRs; does the mechanical checks (title, lint, coverage). Steps 4/5/6/7 are currently `echo` placeholders.
-- `review.yml` — `workflow_dispatch` (manual); runs the Code Review Agent against a **target** repo/PR you choose. Uses `SENTINEL_REVIEW_TOKEN` for `gh` and `GOOGLE_API_KEY` for Gemini.
+- `sentinel.yml` — runs on Sentinel's *own* PRs; does the mechanical checks (title, lint, coverage).
+- `review.yml` — `workflow_dispatch` (manual); runs the Code Review Agent against a **target** repo/PR you choose.
+- `resolve.yml` — `workflow_dispatch` (manual); runs the Conflict Agent (`autoresolve_pr.py`) against a target PR. Dry run unless `push=true`.
+
+Both agent workflows use `SENTINEL_REVIEW_TOKEN` for `gh` and `GOOGLE_API_KEY` for Gemini.
+
+### Live deployment (`app/webhook.py`, `Dockerfile`, `deploy_webhook.sh`)
+
+The Code Review Agent also runs as a **live Cloud Run webhook**: a FastAPI service (`app/webhook.py`) that verifies GitHub's HMAC signature, then runs the reviewer in a background task and posts the verdict — no manual trigger. Deploy with `deploy_webhook.sh` (needs `--no-cpu-throttling` so the background task keeps CPU after the response). The GitHub webhook must be set to the `pull_request` event with the shared `GITHUB_WEBHOOK_SECRET`.
 
 The demo target is [`sentinel-demo`](https://github.com/Meghana-davuluri/sentinel-demo), a "Tasks API" seeded with deliberate design violations and conflicts.
 
