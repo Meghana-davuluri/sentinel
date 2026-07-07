@@ -35,11 +35,10 @@ When a pull request is opened, Sentinel runs a pipeline:
 | 5 | **Merge conflicts resolved** | **Conflict Agent** |
 | 6 | Summary emailed to author and owner | Resend |
 
-The mechanical checks are ordinary CI. The judgment calls — *does this fit the
-architecture?* and *which side of a conflict is correct?* — are made by two ADK
+The mechanical checks are ordinary CI. The judgment calls - *does this fit the
+architecture?* and *which side of a conflict is correct?* - are made by two ADK
 agents. To close the loop, Sentinel wires up an email API (Resend) so the repo
-owner — and contributors, once a sending domain is verified — receives a summary
-of the verdict once the review completes.
+owner and contributors receive a summary of the verdict once the review is completed.
 
 ## The two agents
 
