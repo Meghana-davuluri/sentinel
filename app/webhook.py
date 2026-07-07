@@ -68,13 +68,25 @@ def health() -> dict:
 
 
 async def run_review(repo: str, pr: int) -> None:
-    """Fetch the PR, run the reviewer, and post the verdict. Runs in the
-    background so the webhook can answer GitHub within its ~10s timeout."""
+    """Fetch the PR, run the reviewer, post the verdict, and email a summary.
+    Runs in the background so the webhook can answer GitHub within its ~10s
+    timeout."""
     diff = fetch_diff(repo, pr)
     tdd = fetch_file(repo, TDD_PATH)
     rules = fetch_file(repo, RULES_PATH)
     review = await run_agent(build_prompt(tdd, rules, diff))
     post_comment(repo, pr, format_comment(review))
+
+    # Email the summary to the repo owner, if configured. Never let an email
+    # failure break the review that already posted.
+    owner_email = os.environ.get("SENTINEL_OWNER_EMAIL")
+    if owner_email:
+        try:
+            from app.notify import send_review_email
+
+            send_review_email(repo, pr, review, [owner_email])
+        except Exception as exc:
+            print(f"email failed (non-fatal): {exc}")
 
 
 @app.post("/webhook")
