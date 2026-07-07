@@ -45,34 +45,35 @@ When a pull request is opened, Sentinel executes the following checks in order:
 ## Architecture
 
 ```
-                          Pull Request
-                               │
-                               ▼
-        ┌──────────────────────────────────────────────┐
-        │              GitHub Actions (CI)              │
-        │                                               │
-        │   1. Title    2. Lint    3. Coverage          │
-        └───────────────────────┬───────────────────────┘
-                                 │
-              ┌──────────────────┴──────────────────┐
-              ▼                                      ▼
-    ┌─────────────────────────┐          ┌────────────────────┐
-    │  Code Review Pipeline   │          │   Conflict Agent   │
-    │   (ADK SequentialAgent) │          │       (ADK)        │
-    │ ┌─────────────────────┐ │          └──────────┬─────────┘
-    │ │ 1. investigator     │ │                     │  reads conflict + TDD + rules
-    │ │    tools: read_file │ │                     │  → resolved file, committed
-    │ │    + list_files     │ │                     ▼
-    │ └──────────┬──────────┘ │             conflict cleared
-    │            ▼ notes      │             pushed to the branch
-    │ ┌─────────────────────┐ │
-    │ │ 2. verdict agent    │ │
-    │ │    Review schema    │ │
-    │ └──────────┬──────────┘ │
-    └────────────┼────────────┘
-                 ▼
-         approve / reject
-         posted to the PR
+                          Pull Request opened
+                                   │
+            ┌──────────────────────┴──────────────────────┐
+            ▼                                              ▼
+  ┌───────────────────────┐               ┌──────────────────────────────┐
+  │   GitHub Actions (CI)  │               │  Cloud Run webhook (live)    │
+  │  1. Title  2. Lint     │               │  HMAC-verified, auto-review  │
+  │  3. Coverage           │               │  on every PR — no trigger    │
+  └───────────┬───────────┘               └───────────────┬──────────────┘
+              │                                            │
+              └─────────────────────┬──────────────────────┘
+                                    ▼
+              ┌─────────────────────────┐          ┌────────────────────┐
+              │  Code Review Pipeline   │          │   Conflict Agent   │
+              │   (ADK SequentialAgent) │          │       (ADK)        │
+              │ ┌─────────────────────┐ │          └──────────┬─────────┘
+              │ │ 1. investigator     │ │                     │  reads conflict + TDD + rules
+              │ │    tools: read_file │ │                     │  → resolved file, committed
+              │ │    + list_files     │ │                     ▼
+              │ └──────────┬──────────┘ │             conflict cleared
+              │            ▼ notes      │             pushed to the branch
+              │ ┌─────────────────────┐ │
+              │ │ 2. verdict agent    │ │
+              │ │    Review schema    │ │
+              │ └──────────┬──────────┘ │
+              └────────────┼────────────┘
+                           ▼
+                approve / reject
+                posted to the PR  ──►  email summary (Resend)
 ```
 
 ## The agents
