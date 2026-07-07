@@ -1,4 +1,4 @@
-# Sentinel — Agentic Pull-Request Review That Understands Your Design
+# Sentinel: Agentic Pull-Request Review That Understands Your Design
 
 **Track: Agents for Business**
 
@@ -7,7 +7,7 @@
 Every engineering team spends a large, recurring cost on code review. A senior
 engineer reads each pull request to answer one question that no linter can:
 *does this change respect how we decided to build this system?* That knowledge
-lives in design documents and team conventions — and enforcing it by hand is
+lives in design documents and team conventions, and enforcing it by hand is
 slow, inconsistent, and doesn't scale.
 
 Generic AI review tools (Copilot, CodeRabbit, and the like) help with style and
@@ -21,61 +21,61 @@ that actually hurt in production: design drift.
 **Sentinel** is a multi-agent service that automates pull-request review and
 merge-conflict resolution for Python repositories, built on the
 [Google Agent Development Kit (ADK)](https://adk.dev). It reads a repository's
-*own* design document and engineering rules, and enforces them on every PR - no
-human reviewer required.
+*own* design document and engineering rules, and enforces them on every PR with
+no human reviewer required.
 
 When a pull request is opened, Sentinel runs a pipeline:
 
 | # | Check | Mechanism | Status |
 |---|-------|-----------|:------:|
-| 1 | PR title follows convention | CI — Conventional Commits | ✅ |
-| 2 | Lint and syntax | CI — `ruff` | ✅ |
-| 3 | Test coverage ≥ 80% | CI — `pytest --cov` | ✅ |
-| 4 | Code aligns with design (TDD) and rules | **Code Review Agent** | ✅ |
+| 1 | PR title follows convention | CI (Conventional Commits) | ✅ |
+| 2 | Lint and syntax | CI (`ruff`) | ✅ |
+| 3 | Test coverage ≥ 80% | CI (`pytest --cov`) | ✅ |
+| 4 | Code aligns with design (TDD) and rules | **Code Review Pipeline** | ✅ |
 | 5 | Merge conflicts resolved | **Conflict Agent** | ✅ |
 | 6 | CI passes; revert on regression | _planned_ | ◻️ |
 | 7 | Summary email on review completion | Resend | ✅ |
 
-The mechanical checks are ordinary CI. The judgment calls - *does this fit the
-architecture?* and *which side of a conflict is correct?* - are made by ADK
+The mechanical checks are ordinary CI. The judgment calls, like whether a change
+fits the architecture or which side of a conflict is correct, are made by ADK
 agents. To close the loop, Sentinel wires up an email API (Resend): the deployed
 webhook automatically emails the verdict summary to the repo owner, and the CLI
 can copy any additional addresses.
 
-## Deployment — a live service, not a script
+## Deployment: a live service, not a script
 
 Sentinel runs as a **live webhook on Google Cloud Run**. When a pull request is
-opened on a connected repository, GitHub fires a webhook to the service; the
-service verifies the request signature (HMAC-SHA256), runs the Code Review Agent
-in the background, and posts the verdict back to the pull request — with no human
-in the loop and no manual trigger. The reviewer also runs as a GitHub Actions
-workflow for teams that prefer CI-native execution; the same agent code backs
-both paths.
+opened on a connected repository, GitHub fires a webhook to the service. The
+service verifies the request signature (HMAC-SHA256), runs the review pipeline
+in the background, and posts the verdict back to the pull request. No human in
+the loop, no manual trigger. The reviewer also runs as a GitHub Actions workflow
+for teams that prefer CI-native execution; the same agent code backs both paths.
 
 ## The agents
 
-**Code Review Pipeline** — a two-stage ADK `SequentialAgent`:
+**Code Review Pipeline.** A two-stage ADK `SequentialAgent`:
 
-1. An **investigator agent** reads the diff and, when the verdict depends on
-   code the diff does not show — a called helper, a base class, config defined
-   elsewhere — uses its tools (`read_file`, `list_files`) to fetch those files
-   from the exact commit under review and writes verified notes to session
-   state. The repo coordinates come from session state, never from the model,
-   so a malicious diff cannot point the tools at another repository; reads are
-   capped and every tool failure degrades gracefully to a diff-only review.
-2. A **verdict agent** judges the diff against the TDD and team rules, weighing
-   the investigator's notes, and returns a *structured* verdict — approve or
-   reject — with findings that cite the exact rule violated. A Pydantic output
-   schema turns a chatty model into a reliable component: CI can branch on
-   `verdict == "reject"` and block the merge.
+1. An **investigator agent** reads the diff first. When the verdict depends on
+   code the diff does not show (a called helper, a base class, config defined
+   elsewhere), it uses its tools, `read_file` and `list_files`, to fetch those
+   files from the exact commit under review and writes verified notes into
+   session state. The repo coordinates come from session state rather than the
+   model, so a malicious diff cannot point the tools at another repository.
+   Reads are capped, and any tool failure degrades gracefully to a diff-only
+   review.
+2. A **verdict agent** then judges the diff against the TDD and team rules,
+   weighing the investigator's notes, and returns a *structured* verdict,
+   approve or reject, with findings that cite the exact rule violated. A
+   Pydantic output schema turns a chatty model into a reliable component: CI
+   can branch on `verdict == "reject"` and block the merge.
 
-The split is not cosmetic: in ADK, an agent with a structured output schema
+The split is not cosmetic. In ADK, an agent with a structured output schema
 cannot call tools, so investigation (tools, no schema) and judgment (schema, no
-tools) are necessarily separate agents cooperating through shared state.
+tools) have to be separate agents cooperating through shared state.
 
 **Conflict Agent.** Given a file with Git conflict markers plus the same design
 documents, it decides which side of each conflict to keep, produces the fully
-resolved file, commits it, and pushes to the PR branch — clearing the conflict
+resolved file, commits it, and pushes to the PR branch, clearing the conflict
 without a human.
 
 ## What makes it different
@@ -84,11 +84,12 @@ Sentinel's edge is **intent-awareness**. Because it reasons against the
 project's own documented decisions, it catches drift a general reviewer
 structurally cannot.
 
-Concrete example, from the demo repository. A PR changes the API to send
-completion emails *synchronously*, inside the request handler. It's valid
-Python — a linter is happy. But the design document explicitly requires email to
-go through a background queue so request latency stays independent of the email
-provider. Sentinel rejects the PR and cites the rule:
+Here is a concrete example from the demo repository. A PR changes the API to
+send completion emails *synchronously*, inside the request handler. It's valid
+Python, and a linter is perfectly happy with it. But the design document
+explicitly requires email to go through a background queue so request latency
+stays independent of the email provider. Sentinel rejects the PR and cites the
+rule:
 
 ```
 ❌ Sentinel Review: REJECT
@@ -102,27 +103,27 @@ provider. Sentinel rejects the PR and cites the rule:
 | blocker  | no-secrets-in-code    | app/worker.py | API key hardcoded in source.               |
 ```
 
-A generic tool cannot produce this finding — the "bug" is only a bug relative to
-*this team's decision*. That is the business value: Sentinel enforces the
-standards a company actually paid to establish.
+A generic tool cannot produce this finding, because the "bug" is only a bug
+relative to *this team's decision*. That is the business value: Sentinel
+enforces the standards a company actually paid to establish.
 
 ## Evidence it works
 
 Sentinel is validated against a controlled demonstration repository
-([`sentinel-demo`](https://github.com/Meghana-davuluri/sentinel-demo)) — a small
+([`sentinel-demo`](https://github.com/Meghana-davuluri/sentinel-demo)), a small
 "Tasks API" with a design document and five engineering rules, seeded with PRs
 that contain deliberate violations and merge conflicts.
 
 - **Reviewer accuracy: 1.0.** A systematic ADK evaluation over five PR scenarios
   (design violations, a clean PR, and a hard case where the author argues a bad
   change is an improvement) scores **100% correct verdicts** with zero variance.
-  In the hard case, Sentinel rejects the change and cites the design document —
-  it reasons against the spec rather than rubber-stamping the author.
+  In the hard case, Sentinel rejects the change and cites the design document.
+  It reasons against the spec rather than rubber-stamping the author.
 - **Fully automatic on the deployed service.** With the Cloud Run webhook
   connected to `sentinel-demo`, opening a pull request that hardcodes a secret
   triggered Sentinel with no manual step: the service received the webhook, ran
-  the agent, and posted a REJECT comment citing `no-secrets-in-code` — end to
-  end, no human in the loop.
+  the agent, and posted a REJECT comment citing `no-secrets-in-code`. End to
+  end, with no human in the loop.
 - **Live on real PRs.** The reviewer caught all planted violations and posted its
   verdict as a PR comment; the conflict agent resolved a real merge conflict end
   to end, committing the fix and flipping the PR from *conflicting* to
@@ -132,26 +133,26 @@ that contain deliberate violations and merge conflicts.
 
 | Concern | Choice |
 |---------|--------|
-| Agent framework | Google ADK — multi-agent `SequentialAgent` pipeline |
+| Agent framework | Google ADK, multi-agent `SequentialAgent` pipeline |
 | Agent tools | `read_file` / `list_files` against the PR's head commit, state-scoped |
 | Model | Gemini (`gemini-flash-latest`) with Pydantic structured output |
-| Deployment | Google Cloud Run — FastAPI webhook, HMAC-verified, background review |
+| Deployment | Google Cloud Run: FastAPI webhook, HMAC-verified, background review |
 | Orchestration | GitHub Actions (CI path) + GitHub webhooks (live path) |
-| GitHub integration | `gh` CLI — diffs, file contents, comments, pushes |
+| GitHub integration | `gh` CLI for diffs, file contents, comments, pushes |
 | Notifications | Resend email API |
 | Quality | ADK eval framework, custom verdict-match metric; unit-tested tools |
 
-The CI side is split across three workflows — `sentinel.yml` (mechanical checks
-on Sentinel's own PRs), `review.yml` (reviewer against a target repo), and
-`resolve.yml` (conflict resolver against a target repo) — so agent runs, which
-target an external repo, never block Sentinel's own PR checks.
+The CI side is split across three workflows: `sentinel.yml` runs the mechanical
+checks on Sentinel's own PRs, `review.yml` runs the reviewer against a target
+repo, and `resolve.yml` runs the conflict resolver. The agent runs target an
+external repository, so they never block Sentinel's own PR checks.
 
 ## Business impact
 
 - **Cheaper review.** The mechanical and design-conformance checks that consume
   senior-engineer time run automatically on every PR.
 - **Consistent standards.** A rule is enforced the same way every time, on every
-  PR — not dependent on which reviewer happened to look.
+  PR, not depending on which reviewer happened to look.
 - **Faster merges.** Conflicts are resolved and verdicts delivered in seconds,
   not on the next reviewer's schedule.
 
@@ -165,7 +166,7 @@ target an external repo, never block Sentinel's own PR checks.
 Sentinel targets Python repositories, with agents implemented in ADK. It is a
 capstone demonstration, not a hardened production service: the coverage gate is
 in measurement mode pending a full agent test suite, and email delivery uses a
-sandbox sender until a domain is verified. The core — a working multi-agent ADK
-review pipeline (investigate → verdict) and a conflict-resolving agent that
-enforce a repository's own design intent, validated at 1.0 accuracy — is
-complete and reproducible.
+sandbox sender until a domain is verified. The core is complete and
+reproducible: a working multi-agent review pipeline (investigate, then verdict)
+and a conflict-resolving agent, both enforcing a repository's own design
+intent, validated at 1.0 accuracy.
