@@ -40,6 +40,16 @@ architecture?* and *which side of a conflict is correct?* - are made by two ADK
 agents. To close the loop, Sentinel wires up an email API (Resend) so the repo
 owner and contributors receive a summary of the verdict once the review is completed.
 
+## Deployment — a live service, not a script
+
+Sentinel runs as a **live webhook on Google Cloud Run**. When a pull request is
+opened on a connected repository, GitHub fires a webhook to the service; the
+service verifies the request signature (HMAC-SHA256), runs the Code Review Agent
+in the background, and posts the verdict back to the pull request — with no human
+in the loop and no manual trigger. The reviewer also runs as a GitHub Actions
+workflow for teams that prefer CI-native execution; the same agent code backs
+both paths.
+
 ## The two agents
 
 **Code Review Agent.** Reads a PR's diff together with the target repository's
@@ -93,10 +103,15 @@ that contain deliberate violations and merge conflicts.
   change is an improvement) scores **100% correct verdicts** with zero variance.
   In the hard case, Sentinel rejects the change and cites the design document —
   it reasons against the spec rather than rubber-stamping the author.
-- **Live on real PRs.** Running against an open PR on `sentinel-demo`, the
-  reviewer caught all planted violations and posted its verdict as a PR comment;
-  the conflict agent resolved a real merge conflict end to end, flipping the PR
-  from *conflicting* to *mergeable*.
+- **Fully automatic on the deployed service.** With the Cloud Run webhook
+  connected to `sentinel-demo`, opening a pull request that hardcodes a secret
+  triggered Sentinel with no manual step: the service received the webhook, ran
+  the agent, and posted a REJECT comment citing `no-secrets-in-code` — end to
+  end, no human in the loop.
+- **Live on real PRs.** The reviewer caught all planted violations and posted its
+  verdict as a PR comment; the conflict agent resolved a real merge conflict end
+  to end, committing the fix and flipping the PR from *conflicting* to
+  *mergeable*.
 
 ## How it's built
 
@@ -104,7 +119,8 @@ that contain deliberate violations and merge conflicts.
 |---------|--------|
 | Agent framework | Google ADK (multi-agent) |
 | Model | Gemini (`gemini-flash-latest`) with Pydantic structured output |
-| Orchestration | GitHub Actions |
+| Deployment | Google Cloud Run — FastAPI webhook, HMAC-verified, background review |
+| Orchestration | GitHub Actions (CI path) + GitHub webhooks (live path) |
 | GitHub integration | `gh` CLI — diffs, file contents, comments, pushes |
 | Notifications | Resend email API |
 | Quality | ADK eval framework, custom verdict-match metric |
