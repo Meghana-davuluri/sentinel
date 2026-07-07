@@ -24,12 +24,13 @@ Environment:
     GH_TOKEN / GITHUB_TOKEN — token the review script uses to read/post on the PR.
 """
 
+import asyncio
 import hashlib
 import hmac
 import os
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Request
 
 from app.review_pr import (
     RULES_PATH,
@@ -66,9 +67,20 @@ def health() -> dict:
     return {"status": "ok", "service": "sentinel-webhook"}
 
 
+async def run_review(repo: str, pr: int) -> None:
+    """Fetch the PR, run the reviewer, and post the verdict. Runs in the
+    background so the webhook can answer GitHub within its ~10s timeout."""
+    diff = fetch_diff(repo, pr)
+    tdd = fetch_file(repo, TDD_PATH)
+    rules = fetch_file(repo, RULES_PATH)
+    review = await run_agent(build_prompt(tdd, rules, diff))
+    post_comment(repo, pr, format_comment(review))
+
+
 @app.post("/webhook")
 async def webhook(
     request: Request,
+    background_tasks: BackgroundTasks,
     x_github_event: str = Header(default=""),
     x_hub_signature_256: str | None = Header(default=None),
 ) -> dict:
@@ -88,16 +100,7 @@ async def webhook(
     repo = payload["repository"]["full_name"]
     pr = payload["number"]
 
-    # Run the reviewer, same pipeline as the CLI script.
-    diff = fetch_diff(repo, pr)
-    tdd = fetch_file(repo, TDD_PATH)
-    rules = fetch_file(repo, RULES_PATH)
-    review = await run_agent(build_prompt(tdd, rules, diff))
-    post_comment(repo, pr, format_comment(review))
+    # Respond to GitHub immediately; do the slow review in the background.
+    background_tasks.add_task(lambda: asyncio.run(run_review(repo, pr)))
 
-    return {
-        "status": "reviewed",
-        "repo": repo,
-        "pr": pr,
-        "verdict": review.verdict,
-    }
+    return {"status": "accepted", "repo": repo, "pr": pr}
